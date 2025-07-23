@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sentence_transformers import SentenceTransformer
 import requests
 import os
 import numpy as np
@@ -13,12 +12,12 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+HF_API_KEY = os.getenv("HF_API_KEY")  # Hugging Face token
 TABLE_NAME = "chunks"
 EMBEDDING_DIM = 384
 
 # Groq LLM client
 groq_client = Groq(api_key=GROQ_API_KEY)
-model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # FastAPI app
 app = FastAPI()
@@ -32,6 +31,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def simulate_embedding(text):
+    response = requests.post(
+        "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
+        headers={"Authorization": f"Bearer {HF_API_KEY}"},
+        json={"inputs": text}
+    )
+    response.raise_for_status()
+    embedding = response.json()
+    return embedding[0]  # HuggingFace returns [ [vector] ]
+
 @app.post("/chat")
 async def chat(request: Request):
     try:
@@ -43,7 +52,7 @@ async def chat(request: Request):
 
         print("User question:", user_question)
 
-        # Simulate embedding
+        # Get embedding
         question_embedding = simulate_embedding(user_question)
         print("Simulated embedding vector (first 5 dims):", question_embedding[:5])
 
@@ -114,9 +123,6 @@ Answer:"""
     except Exception as e:
         print("ERROR OCCURRED:", str(e))
         return {"error": "Internal Server Error", "details": str(e)}
-
-def simulate_embedding(text):
-    return model.encode(text).tolist()
 
 @app.get("/")
 def read_root():
