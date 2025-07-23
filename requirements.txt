@@ -3,4 +3,5 @@ uvicorn==0.22.0
 httpx==0.28.1
 groq==0.30.0
 numpy==1.26.4
+requests==2.31.0
 
