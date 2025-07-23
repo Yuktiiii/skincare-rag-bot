@@ -66,11 +66,14 @@ async def chat(request: Request):
         if not all_rows:
             return {"error": "No chunks found in Supabase."}
 
-        # Score embeddings
+        # Parse and score
         for row in all_rows:
-            row["embedding"] = ast.literal_eval(row["embedding"])
-            row["score"] = float(np.dot(question_embedding, row["embedding"]) /
-                                 (np.linalg.norm(question_embedding) * np.linalg.norm(row["embedding"])))
+            embedding = row["embedding"]
+            if not embedding:
+                continue
+            row["score"] = float(np.dot(question_embedding, embedding) /
+                         (np.linalg.norm(question_embedding) * np.linalg.norm(embedding)))
+
         sorted_chunks = sorted(all_rows, key=lambda x: x["score"], reverse=True)[:3]
         context = "\n\n".join(chunk["text"] for chunk in sorted_chunks)
 
