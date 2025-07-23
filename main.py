@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import os
-import ast
 import numpy as np
 from groq import Groq
 from dotenv import load_dotenv
@@ -49,7 +48,8 @@ async def chat(request: Request):
         # Fetch chunks from Supabase
         headers = {
             "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}"
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
         }
 
         supabase_url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?select=text,embedding"
@@ -66,15 +66,22 @@ async def chat(request: Request):
         if not all_rows:
             return {"error": "No chunks found in Supabase."}
 
-        # Parse and score
+        relevant_chunks = []
         for row in all_rows:
-            embedding = row["embedding"]
-            if not embedding:
+            embedding = row.get("embedding")
+            if not embedding or len(embedding) != EMBEDDING_DIM:
                 continue
-            row["score"] = float(np.dot(question_embedding, embedding) /
-                         (np.linalg.norm(question_embedding) * np.linalg.norm(embedding)))
+            score = float(np.dot(question_embedding, embedding) /
+                          (np.linalg.norm(question_embedding) * np.linalg.norm(embedding)))
+            relevant_chunks.append({
+                "text": row["text"],
+                "score": score
+            })
 
-        sorted_chunks = sorted(all_rows, key=lambda x: x["score"], reverse=True)[:3]
+        if not relevant_chunks:
+            return {"error": "No valid embeddings found for scoring."}
+
+        sorted_chunks = sorted(relevant_chunks, key=lambda x: x["score"], reverse=True)[:3]
         context = "\n\n".join(chunk["text"] for chunk in sorted_chunks)
 
         # Prompt
@@ -112,4 +119,3 @@ def simulate_embedding(text):
 @app.get("/")
 def read_root():
     return {"message": "Skincare RAG API is live 🚀"}
-
