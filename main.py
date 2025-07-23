@@ -33,36 +33,49 @@ app.add_middleware(
 
 @app.post("/chat")
 async def chat(request: Request):
-    body = await request.json()
-    user_question = body.get("question")
+    try:
+        body = await request.json()
+        user_question = body.get("question")
 
-    if not user_question:
-        return {"error": "No question provided."}
+        if not user_question:
+            return {"error": "No question provided."}
 
-    # Call embedding API (optional; assume already embedded for now)
-    # Here we simulate embedding locally — you can replace with API call
-    question_embedding = simulate_embedding(user_question)
+        print("User question:", user_question)
 
-    # Fetch chunks
-    res = requests.get(
-        f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?select=text,embedding",
-        headers={
+        # Simulate embedding
+        question_embedding = simulate_embedding(user_question)
+        print("Simulated embedding vector (first 5 dims):", question_embedding[:5])
+
+        # Fetch chunks from Supabase
+        headers = {
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
-    )
-    all_rows = res.json()
 
-    # Parse and score
-    for row in all_rows:
-        row["embedding"] = ast.literal_eval(row["embedding"])
-        row["score"] = float(np.dot(question_embedding, row["embedding"]) /
-                             (np.linalg.norm(question_embedding) * np.linalg.norm(row["embedding"])))
-    sorted_chunks = sorted(all_rows, key=lambda x: x["score"], reverse=True)[:3]
-    context = "\n\n".join(chunk["text"] for chunk in sorted_chunks)
+        supabase_url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?select=text,embedding"
+        print("Calling Supabase URL:", supabase_url)
 
-    # Prompt
-    prompt = f"""You are a helpful skincare assistant. Answer the user's question based on the context below.
+        res = requests.get(supabase_url, headers=headers)
+        print("Supabase status:", res.status_code)
+
+        if res.status_code != 200:
+            return {"error": f"Supabase request failed", "status": res.status_code, "details": res.text}
+
+        all_rows = res.json()
+
+        if not all_rows:
+            return {"error": "No chunks found in Supabase."}
+
+        # Score embeddings
+        for row in all_rows:
+            row["embedding"] = ast.literal_eval(row["embedding"])
+            row["score"] = float(np.dot(question_embedding, row["embedding"]) /
+                                 (np.linalg.norm(question_embedding) * np.linalg.norm(row["embedding"])))
+        sorted_chunks = sorted(all_rows, key=lambda x: x["score"], reverse=True)[:3]
+        context = "\n\n".join(chunk["text"] for chunk in sorted_chunks)
+
+        # Prompt
+        prompt = f"""You are a helpful skincare assistant. Answer the user's question based on the context below.
 
 Context:
 {context}
@@ -72,18 +85,28 @@ Question:
 
 Answer:"""
 
-    response = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="mixtral-8x7b-32768",
-        temperature=0.7
-    )
+        print("Calling Groq with prompt:")
+        print(prompt[:300] + "..." if len(prompt) > 300 else prompt)
 
-    return {"answer": response.choices[0].message.content}
+        response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="mixtral-8x7b-32768",
+            temperature=0.7
+        )
+
+        answer = response.choices[0].message.content
+        print("LLM Answer:", answer[:300] + "..." if len(answer) > 300 else answer)
+
+        return {"answer": answer}
+
+    except Exception as e:
+        print("ERROR OCCURRED:", str(e))
+        return {"error": "Internal Server Error", "details": str(e)}
 
 def simulate_embedding(text):
-    # Fake placeholder vector just to keep structure running — REPLACE with real vector if needed
     return np.ones(EMBEDDING_DIM).tolist()
 
 @app.get("/")
 def read_root():
     return {"message": "Skincare RAG API is live 🚀"}
+
