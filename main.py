@@ -83,3 +83,7 @@ Answer:"""
 def simulate_embedding(text):
     # Fake placeholder vector just to keep structure running — REPLACE with real vector if needed
     return np.ones(EMBEDDING_DIM).tolist()
+
+@app.get("/")
+def read_root():
+    return {"message": "Skincare RAG API is live 🚀"}
